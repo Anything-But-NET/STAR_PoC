@@ -59,36 +59,64 @@ Documents are parsed into an Abstract Syntax Tree (AST) of `SegmentNode` objects
 
 #### A. Macro-Windowing with Overlap Deduplication
 If section content exceeds the model's context, it is divided into large `macro` blocks (e.g., $7500$ tokens with a $500$-token sliding overlap). To prevent boundary artifacts and duplicate chunks:
-$$\text{min\_micro\_start} = 1 + \max(0, \text{prev\_macro\_end} - \text{macro\_start})$$
-Only micro-chunks whose start token index $\ge \text{min\_micro\_start}$ are emitted from subsequent macro windows.
+
+$$
+s_{\mathrm{min}} = 1 + \max\left(0, e_{\mathrm{prev}} - s_{\mathrm{macro}}\right)
+$$
+
+Only micro-chunks whose start token index $s \ge s_{\mathrm{min}}$ (i.e. `min_micro_start = 1 + max(0, prev_macro_end - macro_start)`) are emitted from subsequent macro windows.
 
 #### B. Late Chunking with CLS Hybridization
 Inside each macro block:
 1. The entire macro block is passed through the transformer model (e.g., `BAAI/bge-m3`) in **one single forward pass**, generating full token embeddings $H \in \mathbb{R}^{B \times L \times D}$ where tokens attend to surrounding section context.
 2. Markdown-aware micro-splitting isolates sentences, code blocks, and bold sub-topics (`**...**`).
 3. For each micro-chunk spanning token indices $[s, e]$, we compute its Late Chunking span slice:
-   $$\vec{v}_{\text{late}} = \text{normalize}\left(\frac{1}{e - s}\sum_{i=s}^{e-1} H_{0, i}\right)$$
+
+$$
+\vec{v}_{\mathrm{late}} = \mathrm{normalize}\left(\frac{1}{e - s}\sum_{i=s}^{e-1} H_{0, i}\right)
+$$
+
 4. For dense retrieval models optimized on `[CLS]` sentence representations, STAR blends the native sentence CLS embedding with the cross-contextualized span vector:
-   $$\vec{v}_{\text{micro}} = \text{normalize}\left(\text{normalize}(\vec{v}_{\text{cls}}) + \vec{v}_{\text{late}}\right)$$
-   This provides the best of both worlds: sharp lexical/semantic focus without losing macro-block section context.
+
+$$
+\vec{v}_{\mathrm{micro}} = \mathrm{normalize}\left(\mathrm{normalize}(\vec{v}_{\mathrm{cls}}) + \vec{v}_{\mathrm{late}}\right)
+$$
+
+This provides the best of both worlds: sharp lexical/semantic focus without losing macro-block section context.
 
 #### C. Self-Attention Tree Pooling (STAR Centrality)
 Unlike **RAPTOR**, which invokes expensive LLMs to summarize text at every tree level, STAR computes parent vectors purely through vector-space self-attention.
 
 Given $N$ vectors $X = [\vec{x}_1, \vec{x}_2, \dots, \vec{x}_N]^T \in \mathbb{R}^{N \times D}$:
 1. Compute the normalized pairwise cosine similarity matrix:
-   $$A = \hat{X}\hat{X}^T, \quad \text{where } \hat{X}_i = \frac{\vec{x}_i}{\|\vec{x}_i\|_2}$$
+
+$$
+A = \hat{X}\hat{X}^T, \quad \text{where } \hat{X}_i = \frac{\vec{x}_i}{\|\vec{x}_i\|_2}
+$$
+
 2. Calculate the mean semantic centrality (average affinity) for each child across all siblings:
-   $$s_i = \frac{1}{N}\sum_{j=1}^N A_{ij}$$
-   *(Using the **mean** rather than the raw sum normalizes centrality scores to $[-1, 1]$ regardless of $N$. This ensures the temperature $\tau$ behaves consistently whether a section has $2$ chunks or $25$ chunks, avoiding softmax saturation on large sections).*
+
+$$
+s_i = \frac{1}{N}\sum_{j=1}^N A_{ij}
+$$
+
+*(Using the **mean** rather than the raw sum normalizes centrality scores to $[-1, 1]$ regardless of $N$. This ensures the temperature $\tau$ behaves consistently whether a section has $2$ chunks or $25$ chunks, avoiding softmax saturation on large sections).*
+
 3. Apply temperature-scaled softmax ($\tau = 0.1$ by default) to emphasize semantic consensus and suppress isolated noise/boilerplate:
-   $$w_i = \frac{\exp\left(\frac{s_i - \max(s)}{\tau}\right)}{\sum_{k=1}^N \exp\left(\frac{s_k - \max(s)}{\tau}\right)}$$
+
+$$
+w_i = \frac{\exp\left(\frac{s_i - \max(s)}{\tau}\right)}{\sum_{k=1}^N \exp\left(\frac{s_k - \max(s)}{\tau}\right)}
+$$
+
 4. Compute the parent vector over the normalized child representations:
-   $$\vec{v}_{\text{parent}} = \text{normalize}\left(\sum_{i=1}^N w_i \hat{X}_i\right)$$
+
+$$
+\vec{v}_{\mathrm{parent}} = \mathrm{normalize}\left(\sum_{i=1}^N w_i \hat{X}_i\right)
+$$
 
 In `vectorize_node`, a section's embedding is built by pooling:
-- The section's own title embedding $\vec{v}_{\text{title}}$ (anchoring the section's identity).
-- The pooled vector of its immediate micro-chunks $\vec{v}_{\text{content}}$.
+- The section's own title embedding $\vec{v}_{\mathrm{title}}$ (anchoring the section's identity).
+- The pooled vector of its immediate micro-chunks $\vec{v}_{\mathrm{content}}$.
 - The embeddings of all its recursive child sub-sections.
 
 ---
@@ -150,15 +178,4 @@ Retrieval operates bottom-up through a multi-pass cascade:
    - **Semantic Dominance** triggers immediate consolidation into the full parent section, returning the complete feature matrix.
 
 ---
-
-## 📊 Method Comparison
-
-| Feature | Standard RAG | Small-to-Big / Parent-Child | RAPTOR (Stanford) | **STAR (Ours)** |
-|---|---|---|---|---|
-| **Indexing Unit** | Fixed chunks (e.g. 500t) | Fixed micro & macro chunks | Clustering + LLM summaries | Markdown Tree + Late Micro Chunks |
-| **Cross-Chunk Context** | ❌ None | ❌ None | ⚠️ LLM summary | ✅ Transformer Late Chunking (8k) |
-| **Parent Aggregation** | ❌ None | Text concatenation | ❌ Expensive LLM calls ($$$) | ✅ Fast Self-Attention ($O(N^2)$ dot products) |
-| **Parent Identity Anchor** | ❌ None | ❌ None | ⚠️ Implicit in LLM text | ✅ Section title embedded in parent vector |
-| **Query Merging** | ❌ None | Naive child count | Top-down tree traversal | ✅ **Dual-Trigger Cascade + Anti-Dilution** |
-| **LLM Indexing Cost** | Free | Free | **Very High (API dependent)** | **Zero (100% Local / Free)** |
 
