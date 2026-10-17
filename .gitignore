@@ -1,0 +1,7 @@
+*.db
+qdrant_db/*
+.venv
+.gemini
+.agents
+
+__pycache__
