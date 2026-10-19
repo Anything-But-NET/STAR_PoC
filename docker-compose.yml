@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  mock-graph:
+    image: ghcr.io/sergey-shulyak/mock-graph-server:latest
+    container_name: mock-graph
+    ports:
+      - "8080:8080"
+    environment:
+      - MOCKGRAPH__FIXTUREPATH=/app/fixtures/fixture.yaml
+    volumes:
+      - ./fixtures/fixture.yaml:/app/fixtures/fixture.yaml:ro

@@ -1,0 +1,71 @@
+tenant:
+  domain: mock.local
+
+users:
+  - id: andrii
+    displayName: Andrii Bezpalko
+    upn: andrii@mock.local
+  - id: oleh
+    displayName: Oleh Pona
+    upn: oleh@mock.local
+  - id: taras
+    displayName: Taras Ivaniuk
+    upn: taras@mock.local
+  - id: vasyl
+    displayName: Vasyl Khrustiuk
+    upn: vasyl@mock.local
+  - id: zaharii
+    displayName: Zaharii Abramchuk
+    upn: zaharii@mock.local
+
+groups:
+  - id: test-engineering
+    displayName: Test_Engineering
+    members: [user:andrii, user:taras]
+  - id: test-hr
+    displayName: Test_HR
+    members: [user:vasyl]
+  - id: test-management
+    displayName: Test_Management
+    members: [user:oleh, user:andrii]
+
+sites:
+  - id: kb
+    displayName: Knowledge Base
+    drives:
+      - id: kb-docs
+        name: Documents
+        items:
+          - path: /General
+            permissions:
+              - { principal: group:test-engineering, role: read }
+              - { principal: group:test-hr, role: read }
+              - { principal: group:test-management, role: read }
+          - path: /General/holiday-policy.txt
+            content: |
+              Company Holiday Policy
+              All employees get 20 days PTO. Sick leave is paid at 100%.
+          - path: /General/sick-leave-faq.txt
+            content: |
+              FAQ
+              Sick leave is paid at 50%. (NOTE: This conflicts with HR policy to test conflict resolution).
+
+          - path: /HR
+            breakInheritance: true
+            permissions:
+              - { principal: group:test-hr, role: read }
+              - { principal: group:test-management, role: read }
+          - path: /HR/sick-leave-guide.txt
+            content: |
+              Sick Leave Guide
+              Sick leave is paid at 70%. Notify HR 30 minutes before shift.
+
+          - path: /Engineering
+            breakInheritance: true
+            permissions:
+              - { principal: group:test-engineering, role: read }
+              - { principal: group:test-management, role: read }
+          - path: /Engineering/deployment.txt
+            content: |
+              Deployment Pipeline
+              Jenkins pipeline builds Docker container, pushes to ECR, and deploys to EKS.
