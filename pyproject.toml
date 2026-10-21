@@ -10,8 +10,12 @@ dependencies = [
     "matplotlib>=3.11.2",
     "numpy>=2.5.4",
     "pandas>=3.0.6",
+    "pgvector>=0.5.1",
+    "psycopg>=3.3.6",
+    "psycopg-binary>=3.3.6",
     "qdrant-client[fastembed]>=1.19.1",
     "sentencepiece>=0.2.2",
+    "sqlalchemy>=2.1.5",
     "torch>=2.14.1",
     "transformers>=5.19.0",
 ]

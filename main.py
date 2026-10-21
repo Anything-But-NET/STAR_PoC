@@ -1,26 +1,21 @@
 import sys
+import uuid
 
 import numpy as np
 
-from db import (
-    COLLECTION_NAME,
-    client,
-    query_with_auto_merge,
-    reset_db,
-    save_node,
-    sqlite_cursor,
-)
+from db import DbService
 from spliter import parse_markdown_to_tree
 from transformer import get_embedding, merge_vectors, print_tree, vectorize_node
 
-DEFAULT_MD_PATH = "README.md"
+DEFAULT_MD_PATH = "TEST.md"
 DEFAULT_QUERY = "Run with docker"
 DEFAULT_LIMIT = 20
 DEFAULT_THRESHOLD = 0.5
 
+db = DbService()
 
-def run_pipeline(md_path: str = DEFAULT_MD_PATH) -> list[str]:
-    reset_db()
+def run_pipeline(md_path: str = DEFAULT_MD_PATH) -> list[uuid.UUID]:
+    db.reset_db()
     with open(md_path, "r", encoding="utf-8") as file:
         md_doc = file.read()
 
@@ -31,8 +26,8 @@ def run_pipeline(md_path: str = DEFAULT_MD_PATH) -> list[str]:
     vectorized_tree = vectorize_node(tree)
     print_tree(vectorized_tree)
 
-    # 3. Зберігаємо чанки в SQLite, а вектори й метадані (chunks, parent_id, children_count) у Qdrant
-    return save_node(vectorized_tree)
+    # 3. Зберігаємо чанки та векторні вузли у PostgreSQL
+    return db.save_node(vectorized_tree, file_name=md_path)
 
 
 def embed_query(query_text: str) -> np.ndarray:
@@ -50,32 +45,31 @@ def search_query(
     threshold: float = DEFAULT_THRESHOLD,
 ) -> list[dict]:
     """
-    Приймає текстовий запит -> векторизує його -> дістає топ `limit` поінтів із Qdrant ->
+    Приймає текстовий запит -> векторизує його -> дістає топ `limit` вузлів із PostgreSQL ->
     ітеративно замінює дочірні елементи на батька, якщо їх більшість (> threshold) ->
     повертає фінальний список результатів із текстами чанків.
     """
     if not query_text.strip():
         return []
     query_vec = embed_query(query_text)
-    return query_with_auto_merge(query_vec, limit=limit, threshold=threshold)
+    return db.query_with_auto_merge(query_vec, limit=limit, threshold=threshold)
 
 
 def main() -> None:
     args = [a for a in sys.argv[1:] if a != "--reindex"]
     force_reindex = "--reindex" in sys.argv[1:]
 
-    qdrant_count = client.count(collection_name=COLLECTION_NAME, exact=True).count
-    if qdrant_count == 0 or force_reindex:
-        print(f"📥 Індексуємо {DEFAULT_MD_PATH} у SQLite та Qdrant...")
+    points_count = db.count_points()
+    if points_count == 0 or force_reindex:
+        print(f"📥 Індексуємо {DEFAULT_MD_PATH} у PostgreSQL...")
         run_pipeline(DEFAULT_MD_PATH)
-        qdrant_count = client.count(collection_name=COLLECTION_NAME, exact=True).count
+        points_count = db.count_points()
 
-    sqlite_cursor.execute("SELECT COUNT(*) FROM chunks")
-    sqlite_count = sqlite_cursor.fetchone()[0]
+    chunks_count = db.count_chunks()
 
     print("\n" + "═" * 70)
-    print(f"✅ Чанків у SQLite : {sqlite_count}")
-    print(f"✅ Поінтів у Qdrant: {qdrant_count}")
+    print(f"✅ Чанків у PostgreSQL : {chunks_count}")
+    print(f"✅ Поінтів у PostgreSQL: {points_count}")
     print("═" * 70)
 
     query = " ".join(args) if args else DEFAULT_QUERY
