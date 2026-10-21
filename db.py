@@ -1,25 +1,37 @@
+from collections import defaultdict
 import sqlite3
+from typing import TYPE_CHECKING, Iterable
 import uuid
-from typing import Iterable
 
 import numpy as np
 from qdrant_client import QdrantClient, models
 
+if TYPE_CHECKING:
+    from transformer import VectorizedSegmentNode
+
 COLLECTION_NAME = "demo_collection"
 QDRANT_PATH = "./qdrant_db"
 SQLITE_PATH = "./chunks.db"
+VECTOR_SIZE = 1024
+SHARP_CHILD_SCORE_DIFF = 0.06
+DEFAULT_SCORE_DECAY = 0.001
 
 # Ініціалізація Qdrant у файловому режимі
 client = QdrantClient(path=QDRANT_PATH)
 
-if not client.collection_exists(COLLECTION_NAME):
-    client.create_collection(
-        collection_name=COLLECTION_NAME,
-        vectors_config=models.VectorParams(
-            size=1024,
-            distance=models.Distance.COSINE,
-        ),
-    )
+
+def _ensure_collection() -> None:
+    if not client.collection_exists(COLLECTION_NAME):
+        client.create_collection(
+            collection_name=COLLECTION_NAME,
+            vectors_config=models.VectorParams(
+                size=VECTOR_SIZE,
+                distance=models.Distance.COSINE,
+            ),
+        )
+
+
+_ensure_collection()
 
 # Ініціалізація SQLite для збереження текстових чанків
 sqlite_conn = sqlite3.connect(SQLITE_PATH)
@@ -33,6 +45,16 @@ sqlite_cursor.execute(
     """
 )
 sqlite_conn.commit()
+
+
+def _to_vector_list(vector: np.ndarray | list[float]) -> list[float]:
+    return vector.tolist() if isinstance(vector, np.ndarray) else list(vector)
+
+
+def _normalize_vector(vec: np.ndarray | list[float]) -> np.ndarray:
+    arr = np.asarray(vec, dtype=np.float32)
+    norm = np.linalg.norm(arr)
+    return arr / norm if norm > 0 else arr
 
 
 def add_chunk(chunk_id: uuid.UUID | str, text: str) -> str:
@@ -77,7 +99,7 @@ def add_point(
     """
     pid = str(point_id or uuid.uuid4())
     parent_pid = str(parent_id) if parent_id is not None else None
-    vec_list = vector.tolist() if isinstance(vector, np.ndarray) else list(vector)
+    vec_list = _to_vector_list(vector)
     chunks_payload = [str(cid) for cid in chunk_ids]
 
     client.upsert(
@@ -140,17 +162,32 @@ def reset_db() -> None:
     sqlite_conn.commit()
     if client.collection_exists(COLLECTION_NAME):
         client.delete_collection(COLLECTION_NAME)
-    client.create_collection(
-        collection_name=COLLECTION_NAME,
-        vectors_config=models.VectorParams(
-            size=1024,
-            distance=models.Distance.COSINE,
-        ),
-    )
+    _ensure_collection()
+
+
+def _save_leaf_chunks(
+    valid_content: list[tuple[str, np.ndarray]],
+    parent_id: str | None,
+    parent_children_count: int | None,
+) -> list[str]:
+    chunk_ids: list[str] = []
+    for chunk_text, chunk_vec in valid_content:
+        chunk_id = str(uuid.uuid4())
+        add_chunk(chunk_id, chunk_text)
+        add_point(
+            vector=chunk_vec,
+            chunk_ids=[chunk_id],
+            point_id=chunk_id,
+            parent_id=parent_id,
+            children_count=0,
+            parent_children_count=parent_children_count,
+        )
+        chunk_ids.append(chunk_id)
+    return chunk_ids
 
 
 def save_node(
-    node,
+    node: "VectorizedSegmentNode",
     parent_id: uuid.UUID | str | None = None,
     parent_children_count: int | None = None,
 ) -> list[str]:
@@ -169,35 +206,19 @@ def save_node(
     # Штучний корінь документа (level=0) ніколи не зберігаємо як окремий поінт у Qdrant,
     # щоб він не агрегував усі чанки файлу і не протікав у видачу.
     if getattr(node, "level", None) == 0:
-        all_chunk_ids: list[str] = []
-        for chunk_text, chunk_vec in valid_content:
-            chunk_id = str(uuid.uuid4())
-            add_chunk(chunk_id, chunk_text)
-            add_point(
-                vector=chunk_vec,
-                chunk_ids=[chunk_id],
-                point_id=chunk_id,
-                parent_id=None,
-                children_count=0,
-                parent_children_count=None,
-            )
-            all_chunk_ids.append(chunk_id)
-
+        all_chunk_ids = _save_leaf_chunks(
+            valid_content,
+            parent_id=None,
+            parent_children_count=None,
+        )
         for child in valid_children:
-            child_chunk_ids = save_node(
-                child,
-                parent_id=None,
-                parent_children_count=None,
+            all_chunk_ids.extend(
+                save_node(child, parent_id=None, parent_children_count=None)
             )
-            all_chunk_ids.extend(child_chunk_ids)
-
         return all_chunk_ids
 
     node_id = str(uuid.uuid4())
-
-    # Скільки прямих дочірніх поінтів має цей вузол (мікро-чанки + дочірні секції)
     direct_children_count = len(valid_content) + len(valid_children)
-
     all_chunk_ids: list[str] = []
 
     # Якщо батьківський заголовок не має власного тексту перед підзаголовками,
@@ -207,18 +228,13 @@ def save_node(
         add_chunk(header_chunk_id, f"{'#' * node.level} {node.name.strip()}")
         all_chunk_ids.append(header_chunk_id)
 
-    for chunk_text, chunk_vec in valid_content:
-        chunk_id = str(uuid.uuid4())
-        add_chunk(chunk_id, chunk_text)
-        add_point(
-            vector=chunk_vec,
-            chunk_ids=[chunk_id],
-            point_id=chunk_id,
+    all_chunk_ids.extend(
+        _save_leaf_chunks(
+            valid_content,
             parent_id=node_id,
-            children_count=0,
             parent_children_count=direct_children_count,
         )
-        all_chunk_ids.append(chunk_id)
+    )
 
     # 2. Рекурсивно зберігаємо дочірні вузли
     for child in valid_children:
@@ -251,7 +267,7 @@ def search_points(
     """
     Шукає топ-N найближчих поінтів у Qdrant за вектором запиту.
     """
-    vec_list = vector.tolist() if isinstance(vector, np.ndarray) else list(vector)
+    vec_list = _to_vector_list(vector)
     query_filter = (
         models.Filter(
             must=[
@@ -289,29 +305,26 @@ def auto_merge_points(
        тоді дочірні поінти замінюються на батьківський.
     Якщо ж один вузький мікро-чанк значно точніший за вектор розмитого батька — він не склеюється.
     """
-    from collections import defaultdict
-
-    q_vec = np.asarray(query_vector, dtype=np.float32) if query_vector is not None else None
-    if q_vec is not None:
-        q_norm = np.linalg.norm(q_vec)
-        if q_norm > 0:
-            q_vec = q_vec / q_norm
+    q_vec = _normalize_vector(query_vector) if query_vector is not None else None
 
     current_points: dict[str, models.ScoredPoint | models.Record] = {}
     scores: dict[str, float] = {}
+    leaf_scores: dict[str, float] = {}
 
-    for idx, p in enumerate(points):
-        pid = str(p.id)
-        current_points[pid] = p
-        scores[pid] = float(getattr(p, "score", 1.0 - idx * 0.001))
+    for idx, point in enumerate(points):
+        pid = str(point.id)
+        initial_score = float(getattr(point, "score", 1.0 - idx * DEFAULT_SCORE_DECAY))
+        current_points[pid] = point
+        scores[pid] = initial_score
+        leaf_scores[pid] = initial_score
 
     while True:
         by_parent: dict[str, list[models.ScoredPoint | models.Record]] = defaultdict(list)
-        for p in current_points.values():
-            payload = p.payload or {}
+        for point in current_points.values():
+            payload = point.payload or {}
             parent_id = payload.get("parent_id")
             if parent_id is not None:
-                by_parent[str(parent_id)].append(p)
+                by_parent[str(parent_id)].append(point)
 
         merged_in_iteration = False
 
@@ -327,32 +340,28 @@ def auto_merge_points(
             if parent_point is None:
                 continue
 
-            # Не згортаємо в самий корінь усього документа (верхній контейнер із parent_id=None)
             parent_payload = parent_point.payload or {}
-            if parent_payload.get("parent_id") is None and total_children > 1:
-                continue
-
             parent_chunks = set(parent_payload.get("chunks", []))
-            descendant_scores = [
-                scores.get(str(p.id), 0.0)
+
+            descendant_ids = [
+                str(p.id)
                 for p in current_points.values()
                 if parent_chunks and set((p.payload or {}).get("chunks", [])).issubset(parent_chunks)
             ]
-            best_child_score = max(
-                descendant_scores if descendant_scores else [scores.get(str(ch.id), 0.0) for ch in children]
-            )
+            if not descendant_ids:
+                descendant_ids = [str(ch.id) for ch in children]
+
+            best_child_score = max(scores.get(cid, 0.0) for cid in descendant_ids)
+            best_raw_leaf_score = max(leaf_scores.get(cid, 0.0) for cid in descendant_ids)
             parent_score = best_child_score
 
             if q_vec is not None and getattr(parent_point, "vector", None) is not None:
-                p_vec = np.asarray(parent_point.vector, dtype=np.float32)
-                p_norm = np.linalg.norm(p_vec)
-                if p_norm > 0:
-                    p_vec = p_vec / p_norm
+                p_vec = _normalize_vector(parent_point.vector)
                 parent_score = float(np.dot(q_vec, p_vec))
 
             has_quorum = (len(children) / total_children) > threshold
             parent_is_better = parent_score > best_child_score
-            child_is_much_sharper = (best_child_score - parent_score) > 0.06
+            child_is_much_sharper = (best_child_score - parent_score) > SHARP_CHILD_SCORE_DIFF
 
             if (has_quorum and not child_is_much_sharper) or parent_is_better:
                 for ch in children:
@@ -360,9 +369,16 @@ def auto_merge_points(
                     current_points.pop(cid, None)
                     scores.pop(cid, None)
 
+                for cid in descendant_ids:
+                    current_points.pop(cid, None)
+                    scores.pop(cid, None)
+                    leaf_scores.pop(cid, None)
+
                 parent_pid = str(parent_point.id)
                 current_points[parent_pid] = parent_point
                 scores[parent_pid] = max(best_child_score, parent_score)
+                leaf_scores[parent_pid] = best_raw_leaf_score
+
                 merged_in_iteration = True
 
         if not merged_in_iteration:
@@ -385,13 +401,13 @@ def query_with_auto_merge(
     merged_points = auto_merge_points(initial_points, query_vector=vector, threshold=threshold)
 
     results: list[dict] = []
-    for p, score in merged_points:
-        payload = p.payload or {}
+    for point, score in merged_points:
+        payload = point.payload or {}
         chunk_ids = payload.get("chunks", [])
         chunk_texts = get_chunks(chunk_ids)
         results.append(
             {
-                "point_id": str(p.id),
+                "point_id": str(point.id),
                 "parent_id": payload.get("parent_id"),
                 "score": score,
                 "children_count": payload.get("children_count", 0),
