@@ -10,3 +10,19 @@ services:
       - MOCKGRAPH__FIXTUREPATH=/app/fixtures/fixture.yaml
     volumes:
       - ./fixtures/fixture.yaml:/app/fixtures/fixture.yaml:ro
+services:
+  db:
+    image: pgvector/pgvector:pg18-trixie
+    restart: always
+    shm_size: 128mb
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-postgres}
+    volumes:
+          - pg_data:/var/lib/postgresql
+
+volumes:
+  pg_data:    
