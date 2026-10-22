@@ -1,0 +1,50 @@
+﻿Remote Work Hardware Allowance Policy
+Policy Reference: HR-POL-2024-003
+Effective Date: January 1, 2024
+Applies To: All active full-time and part-time remote employees
+1. Policy Overview
+To support a productive, ergonomic, and secure remote working environment, the company provides eligible employees with an annual Remote Work Hardware Allowance. This policy outlines the terms, eligibility, and reimbursement process for purchasing hardware and home office equipment.
+2. Allowance Amount & Schedule
+* Annual Allowance: $500.00 USD per calendar year.
+* Cycle: The allowance resets on January 1st of each year.
+* Rollover: Unused funds do not roll over into subsequent calendar years.
+* Proration: Employees hired mid-year will receive a prorated amount based on their start date within the quarter.
+3. Eligible Hardware & Equipment
+The annual allowance may be used toward purchases that enhance workspace functionality, ergonomics, and productivity.
+
+
+Category
+	Approved Items
+	Displays & Peripherals
+	External monitors, monitor arms, keyboards, mice, trackpads, webcams, and docking stations.
+	Audio & Video
+	Headsets, noise-canceling headphones, desktop microphones, and ring lights for video conferencing.
+	Ergonomics & Furniture
+	Ergonomic desk chairs, standing desk converters, lumbar support cushions, and footrests.
+	Connectivity & Power
+	Surge protectors, uninterruptible power supplies (UPS), ethernet cables, and high-speed routers.
+	
+
+Note: Core primary computing hardware (laptops, primary desktop computers) is provided directly by the IT Department and is separate from this allowance.
+4. Ineligible Expenses
+The following items are strictly prohibited from reimbursement under this allowance:
+
+
+* Monthly internet service or mobile phone bills (covered under separate connectivity stipends)
+* Office decor, plants, or aesthetic items
+* Consumables such as printer paper, pens, and ink cartridges
+* Personal consumer electronics unrelated to work functions (e.g., gaming consoles, smart TVs)
+5. Reimbursement Process
+To claim reimbursement, employees must follow these steps within 30 days of purchase:
+
+
+1. Purchase the eligible equipment out-of-pocket.
+2. Log into the expense management system and submit a new report titled Remote Hardware Allowance - [Year].
+3. Attach an itemized receipt showing the item description, date, and payment amount.
+4. Select the cost center HR - Remote Operations.
+
+
+Approved reimbursements will be processed and disbursed in the next regular payroll cycle.
+6. Equipment Ownership & Tax Implications
+* Ownership: Equipment purchased using the hardware allowance is considered company-funded property intended for work productivity. However, items do not need to be returned upon separation unless specifically requested by IT/HR.
+* Taxability: In accordance with standard tax regulations, this reimbursement is generally considered non-taxable when supported by valid, itemized receipts for qualifying business expenses.

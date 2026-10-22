@@ -41,31 +41,38 @@ sites:
               - { principal: group:test-engineering, role: read }
               - { principal: group:test-hr, role: read }
               - { principal: group:test-management, role: read }
-          - path: /General/holiday-policy.txt
+          - path: /General/[General] Q3 2026 Company Holiday Policy.pdf
+            source: "[General] Q3 2026 Company Holiday Policy.pdf"
+          - path: /General/[General] Q3 2026 Company Holiday Policy-2 (Updated).pdf
+            source: "[General] Q3 2026 Company Holiday Policy-2 (Updated).pdf"
+          - path: /General/[General] Sick Leave FAQ (Conflict).txt
             content: |
-              Company Holiday Policy
-              All employees get 20 days PTO. Sick leave is paid at 100%.
-          - path: /General/sick-leave-faq.txt
-            content: |
-              FAQ
-              Sick leave is paid at 50%. (NOTE: This conflicts with HR policy to test conflict resolution).
+              FAQ: Sick Leave Compensation
+              Standard sick leave is compensated at 50% of the base salary.
 
           - path: /HR
             breakInheritance: true
             permissions:
               - { principal: group:test-hr, role: read }
               - { principal: group:test-management, role: read }
-          - path: /HR/sick-leave-guide.txt
+          - path: /HR/[HR] 2026 Sick Leave and Compensation Guide.txt
             content: |
-              Sick Leave Guide
-              Sick leave is paid at 70%. Notify HR 30 minutes before shift.
+              # Comprehensive Sick Leave Guide 2026
+              Standard Compensation Rate: Standard short-term sick leave is compensated at 70% of base salary.
+          - path: /HR/[Policy A] Remote Work Hardware Allowance (Old).txt
+            content: |
+              Policy A: Remote Work Hardware Allowance
+              The annual allowance is $500. Ergonomic chairs are fully covered by this allowance.
+          - path: /HR/[Policy B] Remote Work Hardware Allowance (New).txt
+            content: |
+              Policy B: Remote Work Hardware Allowance (Update)
+              Effective immediately, the annual allowance is reduced to $300. 
+              Ergonomic chairs are NO LONGER covered.
 
           - path: /Engineering
             breakInheritance: true
             permissions:
               - { principal: group:test-engineering, role: read }
               - { principal: group:test-management, role: read }
-          - path: /Engineering/deployment.txt
-            content: |
-              Deployment Pipeline
-              Jenkins pipeline builds Docker container, pushes to ECR, and deploys to EKS.
+          - path: /Engineering/[Eng] Backend Deployment Pipeline Architecture.pdf
+            source: "[Eng] Backend Deployment Pipeline Architecture.pdf"
