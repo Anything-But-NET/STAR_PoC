@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   mock-graph:
@@ -9,4 +9,4 @@ services:
     environment:
       - MOCKGRAPH__FIXTUREPATH=/app/fixtures/fixture.yaml
     volumes:
-      - ./fixtures/fixture.yaml:/app/fixtures/fixture.yaml:ro
+      - ./fixtures:/app/fixtures:ro
